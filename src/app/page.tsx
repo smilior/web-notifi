@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 type Status =
   | "default"
@@ -29,9 +29,9 @@ export default function Home() {
   const [body, setBody] = useState("これはWeb Push通知のテストです");
   const [swRegistration, setSwRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
+  const subscriptionRef = useRef<PushSubscriptionJSON | null>(null);
 
   useEffect(() => {
-    // iOS Safari（PWAでない）場合はホーム画面追加を案内
     if (isIOS() && !isStandalone()) {
       setStatus("need-pwa");
       setMessage(
@@ -60,6 +60,7 @@ export default function Home() {
         setSwRegistration(reg);
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
+          subscriptionRef.current = sub.toJSON();
           setStatus("subscribed");
           setMessage("通知の購読済みです");
         }
@@ -88,25 +89,16 @@ export default function Home() {
         return;
       }
 
-      const subscription = await swRegistration.pushManager.subscribe({
+      const sub = await swRegistration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
         ),
       });
 
-      const res = await fetch("/api/push/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(subscription.toJSON()),
-      });
-
-      if (res.ok) {
-        setStatus("subscribed");
-        setMessage("通知の購読が完了しました");
-      } else {
-        throw new Error("Subscription API failed");
-      }
+      subscriptionRef.current = sub.toJSON();
+      setStatus("subscribed");
+      setMessage("通知の購読が完了しました");
     } catch (err) {
       setMessage(`購読エラー: ${(err as Error).message}`);
       setStatus("error");
@@ -114,19 +106,26 @@ export default function Home() {
   };
 
   const sendNotification = async () => {
+    if (!subscriptionRef.current) {
+      setMessage("購読情報がありません。再度購読してください");
+      setStatus("error");
+      return;
+    }
     setStatus("sending");
     try {
       const res = await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body }),
+        body: JSON.stringify({
+          title,
+          body,
+          subscription: subscriptionRef.current,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setStatus("sent");
-        setMessage(
-          `通知送信完了: ${data.succeeded}件成功, ${data.failed}件失敗`
-        );
+        setMessage("通知を送信しました");
       } else {
         throw new Error(data.error || "Send failed");
       }
@@ -238,7 +237,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* iOS Instructions (shown when not in need-pwa mode) */}
+        {/* iOS Instructions */}
         {status !== "need-pwa" && (
           <div className="mt-8 p-4 rounded-lg bg-zinc-900 border border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-300 mb-2">
