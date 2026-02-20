@@ -113,16 +113,23 @@ export default function Home() {
     }
     setStatus("sending");
     try {
+      const payload = {
+        title,
+        body,
+        subscription: subscriptionRef.current,
+      };
       const res = await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          body,
-          subscription: subscriptionRef.current,
-        }),
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Response (${res.status}): ${text.slice(0, 200)}`);
+      }
       if (res.ok) {
         setStatus("sent");
         setMessage("通知を送信しました");
