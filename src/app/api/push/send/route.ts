@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
-import webpush, { type PushSubscription } from "web-push";
+import webpush from "web-push";
 import { getSubscriptions } from "../subscribe/route";
 
-webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT!,
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-  process.env.VAPID_PRIVATE_KEY!
-);
+function getWebPush() {
+  webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT!,
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
+    process.env.VAPID_PRIVATE_KEY!
+  );
+  return webpush;
+}
 
 export async function POST(request: Request) {
   const { title, body } = await request.json();
@@ -19,10 +22,12 @@ export async function POST(request: Request) {
     );
   }
 
+  const wp = getWebPush();
+
   const results = await Promise.allSettled(
     subscriptions.map((sub) =>
-      webpush.sendNotification(
-        sub as unknown as PushSubscription,
+      wp.sendNotification(
+        sub as never,
         JSON.stringify({ title: title || "テスト通知", body: body || "Hello!" })
       )
     )
