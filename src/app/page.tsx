@@ -13,25 +13,34 @@ export default function Home() {
     useState<ServiceWorkerRegistration | null>(null);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => {
-          setSwRegistration(reg);
-          reg.pushManager.getSubscription().then((sub) => {
-            if (sub) {
-              setStatus("subscribed");
-              setMessage("通知の購読済みです");
-            }
-          });
-        })
-        .catch((err) => {
-          setMessage(`SW登録エラー: ${err.message}`);
-          setStatus("error");
-        });
-    } else {
+    if (!("serviceWorker" in navigator)) {
       setMessage("このブラウザはService Workerに対応していません");
       setStatus("error");
+      return;
+    }
+
+    const registerSW = async () => {
+      try {
+        const reg = await navigator.serviceWorker.register("/sw.js", {
+          scope: "/",
+        });
+        setSwRegistration(reg);
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          setStatus("subscribed");
+          setMessage("通知の購読済みです");
+        }
+      } catch (err) {
+        setMessage(`SW登録エラー: ${(err as Error).message}`);
+        setStatus("error");
+      }
+    };
+
+    if (document.readyState === "complete") {
+      registerSW();
+    } else {
+      window.addEventListener("load", registerSW);
+      return () => window.removeEventListener("load", registerSW);
     }
   }, []);
 
