@@ -96,7 +96,9 @@ export default function Home() {
         ),
       });
 
-      subscriptionRef.current = sub.toJSON();
+      const subJson = sub.toJSON();
+      console.log("Subscription JSON:", JSON.stringify(subJson));
+      subscriptionRef.current = subJson;
       setStatus("subscribed");
       setMessage("通知の購読が完了しました");
     } catch (err) {
@@ -118,6 +120,7 @@ export default function Home() {
         body,
         subscription: subscriptionRef.current,
       };
+      console.log("Sending payload:", JSON.stringify(payload));
       const res = await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
