@@ -25,11 +25,19 @@ function isIOS() {
 export default function Home() {
   const [status, setStatus] = useState<Status>("default");
   const [message, setMessage] = useState("");
-  const [title, setTitle] = useState("テスト通知");
-  const [body, setBody] = useState("これはWeb Push通知のテストです");
+  const [notifyUrl, setNotifyUrl] = useState("");
   const [swRegistration, setSwRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
   const subscriptionRef = useRef<PushSubscriptionJSON | null>(null);
+
+  const buildNotifyUrl = (sub: PushSubscriptionJSON) => {
+    const json = JSON.stringify(sub);
+    const data = btoa(json)
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    return `${window.location.origin}/api/push/notify?data=${data}`;
+  };
 
   useEffect(() => {
     if (isIOS() && !isStandalone()) {
@@ -40,13 +48,7 @@ export default function Home() {
       return;
     }
 
-    if (!("serviceWorker" in navigator)) {
-      setMessage("このブラウザはService Workerに対応していません");
-      setStatus("error");
-      return;
-    }
-
-    if (!("Notification" in window)) {
+    if (!("serviceWorker" in navigator) || !("Notification" in window)) {
       setMessage("このブラウザは通知に対応していません");
       setStatus("error");
       return;
@@ -60,7 +62,9 @@ export default function Home() {
         setSwRegistration(reg);
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
-          subscriptionRef.current = sub.toJSON();
+          const subJson = sub.toJSON();
+          subscriptionRef.current = subJson;
+          setNotifyUrl(buildNotifyUrl(subJson));
           setStatus("subscribed");
           setMessage("通知の購読済みです");
         }
@@ -97,8 +101,8 @@ export default function Home() {
       });
 
       const subJson = sub.toJSON();
-      console.log("Subscription JSON:", JSON.stringify(subJson));
       subscriptionRef.current = subJson;
+      setNotifyUrl(buildNotifyUrl(subJson));
       setStatus("subscribed");
       setMessage("通知の購読が完了しました");
     } catch (err) {
@@ -107,32 +111,21 @@ export default function Home() {
     }
   };
 
-  const sendNotification = async () => {
-    if (!subscriptionRef.current) {
-      setMessage("購読情報がありません。再度購読してください");
-      setStatus("error");
-      return;
-    }
+  const sendNow = async () => {
+    if (!subscriptionRef.current) return;
     setStatus("sending");
     try {
-      const payload = {
-        title,
-        body,
-        subscription: subscriptionRef.current,
-      };
-      console.log("Sending payload:", JSON.stringify(payload));
       const res = await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          title: "テスト通知",
+          body: "ボタンからの送信テスト",
+          subscription: subscriptionRef.current,
+        }),
       });
       const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(`Response (${res.status}): ${text.slice(0, 200)}`);
-      }
+      const data = JSON.parse(text);
       if (res.ok) {
         setStatus("sent");
         setMessage("通知を送信しました");
@@ -143,6 +136,14 @@ export default function Home() {
       setMessage(`送信エラー: ${(err as Error).message}`);
       setStatus("error");
     }
+  };
+
+  const canSend =
+    status === "subscribed" || status === "sent" || status === "sending";
+
+  const copyUrl = async () => {
+    await navigator.clipboard.writeText(notifyUrl);
+    setMessage("URLをコピーしました");
   };
 
   return (
@@ -157,7 +158,7 @@ export default function Home() {
               ? "bg-red-900/50 text-red-300"
               : status === "need-pwa"
               ? "bg-yellow-900/50 text-yellow-300"
-              : status === "subscribed" || status === "sent"
+              : canSend
               ? "bg-green-900/50 text-green-300"
               : "bg-zinc-800 text-zinc-400"
           }`}
@@ -165,7 +166,7 @@ export default function Home() {
           {message || "通知を購読してテストしてください"}
         </div>
 
-        {/* iOS Safari: Show PWA instructions prominently */}
+        {/* iOS Safari: PWA instructions */}
         {status === "need-pwa" && (
           <div className="p-5 rounded-lg bg-yellow-900/30 border border-yellow-800">
             <h3 className="text-base font-semibold text-yellow-200 mb-3">
@@ -199,56 +200,67 @@ export default function Home() {
             </h2>
             <button
               onClick={subscribe}
-              disabled={status === "subscribing" || status === "subscribed"}
+              disabled={status === "subscribing" || canSend}
               className="w-full py-3 px-4 rounded-lg font-medium transition-colors
                 bg-white text-black hover:bg-zinc-200
                 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
             >
               {status === "subscribing"
                 ? "購読中..."
-                : status === "subscribed"
+                : canSend
                 ? "購読済み"
                 : "通知を許可して購読する"}
             </button>
           </div>
         )}
 
-        {/* Step 2: Send */}
-        {status !== "need-pwa" && (
-          <div className="space-y-2">
+        {/* Step 2: Send / Test URL */}
+        {canSend && (
+          <div className="space-y-3">
             <h2 className="text-sm font-semibold text-zinc-400">
               Step 2: テスト通知を送信する
             </h2>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="タイトル"
-              className="w-full p-3 rounded-lg bg-zinc-900 border border-zinc-700
-                focus:border-zinc-500 focus:outline-none text-sm"
-            />
-            <textarea
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              placeholder="本文"
-              rows={2}
-              className="w-full p-3 rounded-lg bg-zinc-900 border border-zinc-700
-                focus:border-zinc-500 focus:outline-none text-sm resize-none"
-            />
+
             <button
-              onClick={sendNotification}
-              disabled={status !== "subscribed" && status !== "sent"}
+              onClick={sendNow}
+              disabled={status === "sending"}
               className="w-full py-3 px-4 rounded-lg font-medium transition-colors
                 bg-blue-600 text-white hover:bg-blue-500
                 disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
             >
-              {status === "sending" ? "送信中..." : "通知を送信する"}
+              {status === "sending" ? "送信中..." : "今すぐ通知を送信"}
             </button>
+
+            {/* Notify URL */}
+            {notifyUrl && (
+              <div className="p-4 rounded-lg bg-zinc-900 border border-zinc-700 space-y-2">
+                <h3 className="text-sm font-semibold text-zinc-300">
+                  外部からの通知テストURL
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  このURLをブラウザで開くと通知が届きます。
+                  title / body パラメータでカスタマイズ可能。
+                </p>
+                <div className="bg-black p-2 rounded text-xs text-green-400 break-all max-h-20 overflow-auto">
+                  {notifyUrl}
+                </div>
+                <button
+                  onClick={copyUrl}
+                  className="w-full py-2 px-3 rounded text-sm font-medium
+                    bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors"
+                >
+                  URLをコピー
+                </button>
+                <p className="text-xs text-zinc-600">
+                  例: ...&title=Hello&body=こんにちは
+                </p>
+              </div>
+            )}
           </div>
         )}
 
         {/* iOS Instructions */}
-        {status !== "need-pwa" && (
+        {status !== "need-pwa" && !canSend && (
           <div className="mt-8 p-4 rounded-lg bg-zinc-900 border border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-300 mb-2">
               iOSで通知を受け取るには
@@ -258,7 +270,6 @@ export default function Home() {
               <li>共有ボタン →「ホーム画面に追加」</li>
               <li>ホーム画面から開き直す</li>
               <li>「通知を許可して購読する」をタップ</li>
-              <li>テスト通知を送信する</li>
             </ol>
           </div>
         )}

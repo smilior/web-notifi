@@ -4,12 +4,11 @@ import webpush from "web-push";
 export async function POST(request: Request) {
   try {
     const json = await request.json();
-    console.log("Received:", JSON.stringify(json).slice(0, 500));
     const { title, body, subscription } = json;
 
     if (!subscription?.endpoint || !subscription?.keys) {
       return NextResponse.json(
-        { error: "Invalid subscription", received: JSON.stringify(json).slice(0, 200) },
+        { error: "Invalid subscription" },
         { status: 400 }
       );
     }
@@ -28,8 +27,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const stack = err instanceof Error ? err.stack : undefined;
-    console.error("Push failed:", message, stack);
+    console.error("Push failed:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
