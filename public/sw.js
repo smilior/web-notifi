@@ -5,11 +5,13 @@ self.addEventListener("push", (event) => {
     body: data.body || "Web Push通知のテストです",
     icon: "/icon-192.png",
     badge: "/icon-192.png",
+    data: { url: data.url || null },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow("/"));
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(clients.openWindow(url));
 });

@@ -6,6 +6,7 @@ export async function GET(request: Request) {
   const data = searchParams.get("data");
   const title = searchParams.get("title") || "テスト通知";
   const body = searchParams.get("body") || "サーバーからの通知です";
+  const url = searchParams.get("url") || null;
 
   if (!data) {
     return NextResponse.json(
@@ -27,14 +28,14 @@ export async function GET(request: Request) {
     }
 
     webpush.setVapidDetails(
-      process.env.VAPID_SUBJECT!,
-      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
-      process.env.VAPID_PRIVATE_KEY!
+      process.env.VAPID_SUBJECT!.trim(),
+      process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!.trim(),
+      process.env.VAPID_PRIVATE_KEY!.trim()
     );
 
     await webpush.sendNotification(
       subscription as never,
-      JSON.stringify({ title, body })
+      JSON.stringify({ title, body, url })
     );
 
     return NextResponse.json({ success: true, title, body });
