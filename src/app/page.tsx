@@ -329,7 +329,7 @@ export default function Home() {
                     <div className="flex items-baseline gap-2">
                       {s.dir ? (
                         <span className="text-xs font-medium text-[#e0e0e0] truncate max-w-[160px]">
-                          {s.dir}
+                          {getFolderName(s.dir)}
                         </span>
                       ) : (
                         <span className="text-xs text-[#555] truncate">
@@ -342,7 +342,7 @@ export default function Home() {
                     </div>
                     {s.dir && (
                       <div className="text-[11px] text-[#3a3a3a] truncate mt-0.5">
-                        {s.url.replace("https://claude.ai/code/", "")}
+                        {s.dir}
                       </div>
                     )}
                   </div>
@@ -419,6 +419,10 @@ function formatDate(unixSec: number): string {
   if (isToday) return `今日 ${time}`;
   if (isYesterday) return `昨日 ${time}`;
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+}
+
+function getFolderName(dir: string): string {
+  return dir.split("/").filter(Boolean).pop() || dir;
 }
 
 function urlBase64ToUint8Array(base64String: string) {
