@@ -326,25 +326,20 @@ export default function Home() {
                     <TerminalIcon />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-center gap-2">
                       {s.dir ? (
-                        <span className="text-xs font-medium text-[#e0e0e0] truncate max-w-[160px]">
-                          {getFolderName(s.dir)}
+                        <span className="text-xs font-medium text-[#e0e0e0] truncate min-w-0 flex-1">
+                          {s.dir}
                         </span>
                       ) : (
-                        <span className="text-xs text-[#555] truncate">
+                        <span className="text-xs text-[#555] truncate min-w-0 flex-1">
                           {s.url.replace("https://claude.ai/code/", "")}
                         </span>
                       )}
-                      <span className="text-[11px] text-[#3a3a3a] flex-shrink-0 ml-auto">
+                      <span className="text-[11px] text-[#444] flex-shrink-0">
                         {formatDate(s.created_at)}
                       </span>
                     </div>
-                    {s.dir && (
-                      <div className="text-[11px] text-[#3a3a3a] truncate mt-0.5">
-                        {s.dir}
-                      </div>
-                    )}
                   </div>
                   <svg
                     className="w-3.5 h-3.5 text-[#2a2a2a] group-hover:text-[#555] transition-colors flex-shrink-0"
@@ -419,10 +414,6 @@ function formatDate(unixSec: number): string {
   if (isToday) return `今日 ${time}`;
   if (isYesterday) return `昨日 ${time}`;
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
-}
-
-function getFolderName(dir: string): string {
-  return dir.split("/").filter(Boolean).pop() || dir;
 }
 
 function urlBase64ToUint8Array(base64String: string) {
