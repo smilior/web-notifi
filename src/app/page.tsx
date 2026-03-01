@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+
+type Session = {
+  id: number;
+  url: string;
+  dir: string | null;
+  created_at: number;
+};
 
 type Status =
   | "default"
@@ -29,6 +36,22 @@ export default function Home() {
   const [swRegistration, setSwRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
   const subscriptionRef = useRef<PushSubscriptionJSON | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sessions");
+      if (res.ok) setSessions(await res.json());
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSessions();
+    const timer = setInterval(fetchSessions, 10000);
+    return () => clearInterval(timer);
+  }, [fetchSessions]);
 
   const buildNotifyUrl = (sub: PushSubscriptionJSON) => {
     const json = JSON.stringify(sub);
@@ -273,9 +296,74 @@ export default function Home() {
             </ol>
           </div>
         )}
+
+        {/* Session History */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-zinc-400">
+              Claude セッション履歴
+            </h2>
+            <button
+              onClick={fetchSessions}
+              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              更新
+            </button>
+          </div>
+
+          {sessions.length === 0 ? (
+            <div className="p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-600">
+              セッションはまだありません
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {sessions.map((s) => (
+                <a
+                  key={s.id}
+                  href={`/r?to=${encodeURIComponent(s.url)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-between p-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors group"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      {s.dir && (
+                        <span className="text-xs font-medium text-blue-400">
+                          {s.dir}
+                        </span>
+                      )}
+                      <span className="text-xs text-zinc-600">
+                        {formatDate(s.created_at)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-zinc-500 truncate">
+                      {s.url.replace("https://claude.ai/code/", "")}
+                    </div>
+                  </div>
+                  <span className="ml-3 text-zinc-600 group-hover:text-zinc-300 transition-colors text-sm">
+                    →
+                  </span>
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );
+}
+
+function formatDate(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `今日 ${time}`;
+  if (isYesterday) return `昨日 ${time}`;
+  return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
 }
 
 function urlBase64ToUint8Array(base64String: string) {

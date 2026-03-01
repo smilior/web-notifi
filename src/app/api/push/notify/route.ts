@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import webpush from "web-push";
+import { db } from "@/lib/db";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -7,6 +8,7 @@ export async function GET(request: Request) {
   const title = searchParams.get("title") || "テスト通知";
   const body = searchParams.get("body") || "サーバーからの通知です";
   const url = searchParams.get("url") || null;
+  const dir = searchParams.get("dir") || null;
 
   if (!data) {
     return NextResponse.json(
@@ -37,6 +39,13 @@ export async function GET(request: Request) {
       subscription as never,
       JSON.stringify({ title, body, url })
     );
+
+    if (url) {
+      await db.execute({
+        sql: "INSERT INTO sessions (url, dir) VALUES (?, ?)",
+        args: [url, dir],
+      });
+    }
 
     return NextResponse.json({ success: true, title, body });
   } catch (err) {
