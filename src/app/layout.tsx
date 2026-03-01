@@ -13,18 +13,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Web Push Test",
-  description: "Web Push通知テストアプリ",
+  title: "Notifi",
+  description: "Claude セッション通知",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
-    title: "PushTest",
+    statusBarStyle: "black-translucent",
+    title: "Notifi",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({

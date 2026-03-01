@@ -9,13 +9,11 @@ type Session = {
   created_at: number;
 };
 
-type Status =
-  | "default"
+type NotifStatus =
+  | "idle"
   | "need-pwa"
   | "subscribing"
   | "subscribed"
-  | "sending"
-  | "sent"
   | "error";
 
 function isStandalone() {
@@ -30,13 +28,16 @@ function isIOS() {
 }
 
 export default function Home() {
-  const [status, setStatus] = useState<Status>("default");
-  const [message, setMessage] = useState("");
+  const [notifStatus, setNotifStatus] = useState<NotifStatus>("idle");
+  const [notifError, setNotifError] = useState("");
   const [notifyUrl, setNotifyUrl] = useState("");
   const [swRegistration, setSwRegistration] =
     useState<ServiceWorkerRegistration | null>(null);
   const subscriptionRef = useRef<PushSubscriptionJSON | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -64,16 +65,13 @@ export default function Home() {
 
   useEffect(() => {
     if (isIOS() && !isStandalone()) {
-      setStatus("need-pwa");
-      setMessage(
-        "iOSではホーム画面に追加してから開き直してください（下の手順を参照）"
-      );
+      setNotifStatus("need-pwa");
       return;
     }
 
     if (!("serviceWorker" in navigator) || !("Notification" in window)) {
-      setMessage("このブラウザは通知に対応していません");
-      setStatus("error");
+      setNotifStatus("error");
+      setNotifError("このブラウザは通知に対応していません");
       return;
     }
 
@@ -88,12 +86,11 @@ export default function Home() {
           const subJson = sub.toJSON();
           subscriptionRef.current = subJson;
           setNotifyUrl(buildNotifyUrl(subJson));
-          setStatus("subscribed");
-          setMessage("通知の購読済みです");
+          setNotifStatus("subscribed");
         }
       } catch (err) {
-        setMessage(`SW登録エラー: ${(err as Error).message}`);
-        setStatus("error");
+        setNotifError((err as Error).message);
+        setNotifStatus("error");
       }
     };
 
@@ -107,242 +104,261 @@ export default function Home() {
 
   const subscribe = async () => {
     if (!swRegistration) return;
-    setStatus("subscribing");
+    setNotifStatus("subscribing");
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
-        setMessage("通知の許可が拒否されました");
-        setStatus("error");
+        setNotifError("通知の許可が拒否されました");
+        setNotifStatus("error");
         return;
       }
-
       const sub = await swRegistration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(
           process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
         ),
       });
-
       const subJson = sub.toJSON();
       subscriptionRef.current = subJson;
       setNotifyUrl(buildNotifyUrl(subJson));
-      setStatus("subscribed");
-      setMessage("通知の購読が完了しました");
+      setNotifStatus("subscribed");
     } catch (err) {
-      setMessage(`購読エラー: ${(err as Error).message}`);
-      setStatus("error");
+      setNotifError((err as Error).message);
+      setNotifStatus("error");
     }
   };
 
-  const sendNow = async () => {
-    if (!subscriptionRef.current) return;
-    setStatus("sending");
+  const sendTest = async () => {
+    if (!subscriptionRef.current || sending) return;
+    setSending(true);
     try {
-      const res = await fetch("/api/push/send", {
+      await fetch("/api/push/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: "テスト通知",
-          body: "ボタンからの送信テスト",
+          title: "Notifi",
+          body: "接続確認: 通知は正常に動作しています",
           subscription: subscriptionRef.current,
         }),
       });
-      const text = await res.text();
-      const data = JSON.parse(text);
-      if (res.ok) {
-        setStatus("sent");
-        setMessage("通知を送信しました");
-      } else {
-        throw new Error(data.error || "Send failed");
-      }
-    } catch (err) {
-      setMessage(`送信エラー: ${(err as Error).message}`);
-      setStatus("error");
+    } finally {
+      setSending(false);
     }
   };
 
-  const canSend =
-    status === "subscribed" || status === "sent" || status === "sending";
-
   const copyUrl = async () => {
     await navigator.clipboard.writeText(notifyUrl);
-    setMessage("URLをコピーしました");
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <main className="min-h-screen bg-black text-white flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        <h1 className="text-2xl font-bold text-center">Web Push 通知テスト</h1>
-
-        {/* Status */}
-        <div
-          className={`p-3 rounded-lg text-sm text-center ${
-            status === "error"
-              ? "bg-red-900/50 text-red-300"
-              : status === "need-pwa"
-              ? "bg-yellow-900/50 text-yellow-300"
-              : canSend
-              ? "bg-green-900/50 text-green-300"
-              : "bg-zinc-800 text-zinc-400"
-          }`}
-        >
-          {message || "通知を購読してテストしてください"}
-        </div>
-
-        {/* iOS Safari: PWA instructions */}
-        {status === "need-pwa" && (
-          <div className="p-5 rounded-lg bg-yellow-900/30 border border-yellow-800">
-            <h3 className="text-base font-semibold text-yellow-200 mb-3">
-              ホーム画面に追加してください
-            </h3>
-            <ol className="text-sm text-yellow-300/80 space-y-3 list-decimal list-inside">
-              <li>
-                画面下の{" "}
-                <span className="inline-block bg-zinc-700 px-2 py-0.5 rounded text-xs">
-                  共有ボタン ↑
-                </span>{" "}
-                をタップ
-              </li>
-              <li>
-                「
-                <span className="font-semibold text-yellow-200">
-                  ホーム画面に追加
-                </span>
-                」を選択
-              </li>
-              <li>ホーム画面に追加されたアイコンからもう一度開く</li>
+  // iOS PWA install screen
+  if (notifStatus === "need-pwa") {
+    return (
+      <main className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center mx-auto">
+              <BellIcon size={28} />
+            </div>
+            <div>
+              <h1 className="text-lg font-semibold">Notifi</h1>
+              <p className="text-sm text-[#666] mt-1">
+                プッシュ通知を受け取るには
+                <br />
+                ホーム画面に追加してください
+              </p>
+            </div>
+          </div>
+          <div className="bg-[#111] border border-[#1e1e1e] rounded-2xl p-5">
+            <ol className="space-y-4">
+              {[
+                <>
+                  画面下の
+                  <span className="text-white font-medium"> 共有ボタン </span>
+                  をタップ
+                </>,
+                <>
+                  <span className="text-white font-medium">
+                    ホーム画面に追加
+                  </span>
+                  を選択
+                </>,
+                <>ホーム画面のアイコンから起動</>,
+              ].map((step, i) => (
+                <li key={i} className="flex items-start gap-3">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#1e1e1e] text-[#555] text-xs flex items-center justify-center font-medium mt-0.5">
+                    {i + 1}
+                  </span>
+                  <span className="text-sm text-[#888]">{step}</span>
+                </li>
+              ))}
             </ol>
           </div>
-        )}
+        </div>
+      </main>
+    );
+  }
 
-        {/* Step 1: Subscribe */}
-        {status !== "need-pwa" && (
-          <div className="space-y-2">
-            <h2 className="text-sm font-semibold text-zinc-400">
-              Step 1: 通知を購読する
-            </h2>
-            <button
-              onClick={subscribe}
-              disabled={status === "subscribing" || canSend}
-              className="w-full py-3 px-4 rounded-lg font-medium transition-colors
-                bg-white text-black hover:bg-zinc-200
-                disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
-            >
-              {status === "subscribing"
-                ? "購読中..."
-                : canSend
-                ? "購読済み"
-                : "通知を許可して購読する"}
-            </button>
+  const isSubscribed = notifStatus === "subscribed";
+
+  return (
+    <main className="min-h-screen bg-[#0a0a0a] text-white">
+      <div className="max-w-md mx-auto px-4 pt-14 pb-10 space-y-5">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-[#111] border border-[#1e1e1e] flex items-center justify-center">
+              <BellIcon size={14} />
+            </div>
+            <span className="text-sm font-semibold tracking-tight">
+              Notifi
+            </span>
           </div>
-        )}
+          <button
+            onClick={() => setShowNotifPanel(!showNotifPanel)}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all cursor-pointer"
+            style={{
+              background: isSubscribed ? "#052e16" : "#141414",
+              color: isSubscribed ? "#4ade80" : "#666",
+              border: `1px solid ${isSubscribed ? "#166534" : "#1e1e1e"}`,
+            }}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                isSubscribed ? "bg-green-400" : "bg-[#444]"
+              }`}
+            />
+            {isSubscribed
+              ? "通知 ON"
+              : notifStatus === "subscribing"
+              ? "設定中..."
+              : "通知 OFF"}
+          </button>
+        </div>
 
-        {/* Step 2: Send / Test URL */}
-        {canSend && (
-          <div className="space-y-3">
-            <h2 className="text-sm font-semibold text-zinc-400">
-              Step 2: テスト通知を送信する
-            </h2>
+        {/* Notification panel */}
+        {showNotifPanel && (
+          <div className="bg-[#111] border border-[#1e1e1e] rounded-2xl p-4 space-y-3">
+            {notifStatus === "error" && (
+              <p className="text-xs text-red-400/80">{notifError}</p>
+            )}
 
-            <button
-              onClick={sendNow}
-              disabled={status === "sending"}
-              className="w-full py-3 px-4 rounded-lg font-medium transition-colors
-                bg-blue-600 text-white hover:bg-blue-500
-                disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
-            >
-              {status === "sending" ? "送信中..." : "今すぐ通知を送信"}
-            </button>
+            {!isSubscribed && notifStatus !== "subscribing" && (
+              <button
+                onClick={subscribe}
+                disabled={!swRegistration}
+                className="w-full py-2.5 rounded-xl text-sm font-medium bg-white text-black hover:bg-zinc-100 transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                通知を有効にする
+              </button>
+            )}
 
-            {/* Notify URL */}
-            {notifyUrl && (
-              <div className="p-4 rounded-lg bg-zinc-900 border border-zinc-700 space-y-2">
-                <h3 className="text-sm font-semibold text-zinc-300">
-                  外部からの通知テストURL
-                </h3>
-                <p className="text-xs text-zinc-500">
-                  このURLをブラウザで開くと通知が届きます。
-                  title / body パラメータでカスタマイズ可能。
-                </p>
-                <div className="bg-black p-2 rounded text-xs text-green-400 break-all max-h-20 overflow-auto">
-                  {notifyUrl}
+            {notifStatus === "subscribing" && (
+              <p className="text-xs text-[#555] text-center py-1">
+                許可を確認中...
+              </p>
+            )}
+
+            {isSubscribed && notifyUrl && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#555]">外部トリガー URL</span>
+                  <button
+                    onClick={sendTest}
+                    disabled={sending}
+                    className="text-xs text-[#444] hover:text-[#777] transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    {sending ? "送信中..." : "テスト"}
+                  </button>
                 </div>
                 <button
                   onClick={copyUrl}
-                  className="w-full py-2 px-3 rounded text-sm font-medium
-                    bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors"
+                  className="w-full p-2.5 rounded-xl bg-[#0a0a0a] border border-[#1a1a1a] hover:border-[#2a2a2a] transition-colors text-left cursor-pointer"
                 >
-                  URLをコピー
+                  {copied ? (
+                    <span className="text-xs text-green-400">コピーしました</span>
+                  ) : (
+                    <span className="text-xs text-[#444] break-all leading-relaxed">
+                      {notifyUrl.replace(
+                        typeof window !== "undefined"
+                          ? window.location.origin
+                          : "",
+                        ""
+                      )}
+                    </span>
+                  )}
                 </button>
-                <p className="text-xs text-zinc-600">
-                  例: ...&title=Hello&body=こんにちは
-                </p>
               </div>
             )}
           </div>
         )}
 
-        {/* iOS Instructions */}
-        {status !== "need-pwa" && !canSend && (
-          <div className="mt-8 p-4 rounded-lg bg-zinc-900 border border-zinc-800">
-            <h3 className="text-sm font-semibold text-zinc-300 mb-2">
-              iOSで通知を受け取るには
-            </h3>
-            <ol className="text-xs text-zinc-500 space-y-1 list-decimal list-inside">
-              <li>Safariでこのページを開く</li>
-              <li>共有ボタン →「ホーム画面に追加」</li>
-              <li>ホーム画面から開き直す</li>
-              <li>「通知を許可して購読する」をタップ</li>
-            </ol>
-          </div>
-        )}
-
-        {/* Session History */}
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-zinc-400">
-              Claude セッション履歴
-            </h2>
+        {/* Sessions */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between pb-1">
+            <span className="text-[11px] font-medium text-[#444] uppercase tracking-widest">
+              Sessions
+            </span>
             <button
               onClick={fetchSessions}
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+              className="text-[11px] text-[#333] hover:text-[#666] transition-colors cursor-pointer"
             >
               更新
             </button>
           </div>
 
           {sessions.length === 0 ? (
-            <div className="p-4 rounded-lg bg-zinc-900 border border-zinc-800 text-center text-xs text-zinc-600">
-              セッションはまだありません
+            <div className="py-16 text-center">
+              <p className="text-sm text-[#333]">セッションはありません</p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {sessions.map((s) => (
                 <a
                   key={s.id}
                   href={`/r?to=${encodeURIComponent(s.url)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-between p-3 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors group"
+                  className="flex items-center gap-3 p-3 rounded-xl bg-[#111] border border-[#1a1a1a] hover:border-[#2a2a2a] hover:bg-[#131313] transition-all group cursor-pointer"
                 >
+                  <div className="w-8 h-8 rounded-lg bg-[#1a1a1a] flex-shrink-0 flex items-center justify-center">
+                    <TerminalIcon />
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      {s.dir && (
-                        <span className="text-xs font-medium text-blue-400">
+                    <div className="flex items-baseline gap-2">
+                      {s.dir ? (
+                        <span className="text-xs font-medium text-[#e0e0e0] truncate max-w-[160px]">
                           {s.dir}
                         </span>
+                      ) : (
+                        <span className="text-xs text-[#555] truncate">
+                          {s.url.replace("https://claude.ai/code/", "")}
+                        </span>
                       )}
-                      <span className="text-xs text-zinc-600">
+                      <span className="text-[11px] text-[#3a3a3a] flex-shrink-0 ml-auto">
                         {formatDate(s.created_at)}
                       </span>
                     </div>
-                    <div className="text-xs text-zinc-500 truncate">
-                      {s.url.replace("https://claude.ai/code/", "")}
-                    </div>
+                    {s.dir && (
+                      <div className="text-[11px] text-[#3a3a3a] truncate mt-0.5">
+                        {s.url.replace("https://claude.ai/code/", "")}
+                      </div>
+                    )}
                   </div>
-                  <span className="ml-3 text-zinc-600 group-hover:text-zinc-300 transition-colors text-sm">
-                    →
-                  </span>
+                  <svg
+                    className="w-3.5 h-3.5 text-[#2a2a2a] group-hover:text-[#555] transition-colors flex-shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
                 </a>
               ))}
             </div>
@@ -353,6 +369,42 @@ export default function Home() {
   );
 }
 
+function BellIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </svg>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#555"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
 function formatDate(unixSec: number): string {
   const d = new Date(unixSec * 1000);
   const now = new Date();
@@ -360,7 +412,10 @@ function formatDate(unixSec: number): string {
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   const isYesterday = d.toDateString() === yesterday.toDateString();
-  const time = d.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+  const time = d.toLocaleTimeString("ja-JP", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   if (isToday) return `今日 ${time}`;
   if (isYesterday) return `昨日 ${time}`;
   return `${d.getMonth() + 1}/${d.getDate()} ${time}`;
@@ -368,7 +423,9 @@ function formatDate(unixSec: number): string {
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const base64 = (base64String + padding)
+    .replace(/-/g, "+")
+    .replace(/_/g, "/");
   const raw = atob(base64);
   const arr = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) {
